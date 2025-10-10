@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run tests
+        run: ./gradlew test
+
+      - name: Build release AAR
+        run: ./gradlew :billingkit:assembleRelease
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## BillingKit ${{ steps.version.outputs.VERSION }}
+
+          ### 🚀 Installation
+
+          Add to your `build.gradle.kts`:
+          ```kotlin
+          dependencies {
+              implementation("com.github.shibaprasadsahu:billingkit:${{ steps.version.outputs.VERSION }}")
+          }
+          ```
+
+          Add JitPack repository in `settings.gradle.kts`:
+          ```kotlin
+          maven { url = uri("https://jitpack.io") }
+          ```
+
+          ### 📚 Quick Start
+
+          ```kotlin
+          // Initialize
+          BillingKit.initialize(
+              context = this,
+              subscriptionIds = listOf("premium_monthly", "premium_yearly")
+          )
+
+          // Observe subscriptions
+          lifecycleScope.launch {
+              BillingKit.getInstance().subscriptionsFlow.collect { subscriptions ->
+                  updateUI(subscriptions)
+              }
+          }
+
+          // Subscribe
+          billingKit.subscribe(this, "premium_monthly") { result ->
+              when (result) {
+                  is PurchaseResult.Success -> handleSuccess()
+                  is PurchaseResult.Error -> handleError()
+                  is PurchaseResult.Cancelled -> handleCancelled()
+                  is PurchaseResult.AlreadyOwned -> handleAlreadyOwned()
+              }
+          }
+          ```
+
+          ### 📖 Documentation
+
+          - [README](https://github.com/shibaprasadsahu/billingkit#readme)
+          - [Architecture Guide](https://github.com/shibaprasadsahu/billingkit/blob/main/AGENTS.md)
+          - [Sample App](https://github.com/shibaprasadsahu/billingkit/tree/main/sample)
+
+          ### 🔗 Links
+
+          - [JitPack Build Status](https://jitpack.io/#shibaprasadsahu/billingkit/${{ steps.version.outputs.VERSION }})
+
+          ---
+
+          **Note**: This is an alpha release. The API may change in future releases.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            billingkit/build/outputs/aar/billingkit-release.aar
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify JitPack
+        run: |
+          curl -X POST "https://jitpack.io/api/builds/com.github.shibaprasadsahu/billingkit/${{ steps.version.outputs.VERSION }}"
