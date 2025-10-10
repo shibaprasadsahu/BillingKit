@@ -67,7 +67,7 @@ afterEvaluate {
 
                 groupId = "com.github.shibaprasadsahu"
                 artifactId = "billingkit"
-                version = "0.1-alpha01"
+                version = "0.1-alpha02"
 
                 pom {
                     name.set("BillingKit")

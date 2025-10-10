@@ -310,7 +310,7 @@ Three parallel jobs with proper dependency management:
 - Runs on `main` and `dev` branches plus all PRs
 
 ### Release Workflow (.github/workflows/release.yml)
-- Triggered by tags matching `[0-9]*` (e.g., `0.1-alpha01`)
+- Triggered by tags matching `[0-9]*` (e.g., `0.1-alpha02`)
 - Runs tests before release
 - Creates GitHub Release with AAR
 - Triggers JitPack build automatically
@@ -327,14 +327,14 @@ install:
 ## Publishing
 
 ### Version Format
-- **Alpha**: `0.x-alphaXX` (e.g., `0.1-alpha01`)
+- **Alpha**: `0.x-alphaXX` (e.g., `0.1-alpha02`)
 - **Beta**: `0.x-betaXX` (future)
 - **Stable**: `1.x.x` (future)
 
 ### Publishing Steps
 1. Update version in `build.gradle.kts`
-2. Create git tag: `git tag 0.1-alpha01`
-3. Push tag: `git push origin 0.1-alpha01`
+2. Create git tag: `git tag 0.1-alpha02`
+3. Push tag: `git push origin 0.1-alpha02`
 4. GitHub Actions automatically:
    - Runs tests
    - Builds AAR
@@ -348,7 +348,7 @@ maven { url = uri("https://jitpack.io") }
 
 // build.gradle.kts
 dependencies {
-    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha01")
+    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha02")
 }
 ```
 
@@ -489,5 +489,5 @@ billingKit.hasActiveSubscription("premium_monthly") { isActive ->
 ---
 
 **Last Updated**: 2025-10-09
-**Library Version**: 0.1-alpha01
+**Library Version**: 0.1-alpha02
 **Billing Library**: 8.0.0
