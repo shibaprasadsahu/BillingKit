@@ -15,7 +15,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1-alpha02"
+        versionName = "0.1-alpha03"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -48,7 +48,7 @@ android {
 dependencies {
 
     implementation(project(":billingkit"))
-//    implementation("com.github.shibaprasadsahu:billingkit:0.2.1-alpha01")
+//    implementation("com.github.shibaprasadsahu:billingkit:0.2.1-alpha03")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
