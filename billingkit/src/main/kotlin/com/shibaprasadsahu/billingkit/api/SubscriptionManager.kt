@@ -18,31 +18,13 @@ interface SubscriptionManager {
     val subscriptionsFlow: StateFlow<List<SubscriptionDetails>>
 
     /**
-     * Flow of only active subscriptions
-     * Updates automatically when subscription status changes
-     */
-    val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>>
-
-    /**
-     * Set a listener to observe subscription product updates
-     * This will be called whenever subscription data is fetched or refreshed
+     * Set a listener to observe purchase updates with lifecycle awareness
+     * Automatically queries purchases when activity resumes
      *
-     * @param listener The listener to receive subscription updates
+     * @param lifecycleOwner The lifecycle owner (Activity or Fragment)
+     * @param listener The listener to receive purchase updates (always called, even with empty list)
      */
-    fun setSubscriptionUpdateListener(listener: SubscriptionUpdateListener)
-
-    /**
-     * Remove the subscription update listener
-     */
-    fun removeSubscriptionUpdateListener()
-
-    /**
-     * Set a listener to observe purchase updates
-     * This will be called when purchase status changes
-     *
-     * @param listener The listener to receive purchase updates
-     */
-    fun setPurchaseUpdateListener(listener: PurchaseUpdateListener)
+    fun setPurchaseUpdateListener(lifecycleOwner: LifecycleOwner, listener: PurchaseUpdateListener)
 
     /**
      * Remove the purchase update listener
@@ -112,29 +94,4 @@ interface SubscriptionManager {
         offerId: String? = null,
         callback: (PurchaseResult) -> Unit
     )
-
-    /**
-     * Check if user has an active subscription for a specific product
-     *
-     * @param productId The subscription product ID
-     * @param callback Called with true if subscription is active, false otherwise
-     */
-    fun hasActiveSubscription(
-        productId: String,
-        callback: (Boolean) -> Unit
-    )
-
-    /**
-     * Check if user has any active subscription
-     *
-     * @param callback Called with true if any subscription is active
-     */
-    fun hasAnyActiveSubscription(callback: (Boolean) -> Unit)
-
-    /**
-     * Get the current active subscription (if any)
-     *
-     * @return SubscriptionDetails of active subscription or null
-     */
-    fun getActiveSubscription(): SubscriptionDetails?
 }

@@ -41,10 +41,14 @@ class MainActivityExample : ComponentActivity() {
             }
         }
 
-        // Optional: Listen to purchases updates (simplified - just one method!)
-        billingKit.setPurchaseUpdateListener { purchases ->
+        // Optional: Listen to purchases updates with lifecycle awareness
+        // Automatically queries purchases on activity resume
+        // Automatically cleans up when activity is destroyed
+        billingKit.setPurchaseUpdateListener(this) { owner, purchases ->
             println("MainActivity: Purchases updated - ${purchases.size} active")
+            // owner is LifecycleOwner (Activity) for lifecycle-aware operations
             // purchases is List<Purchase> - all active purchases
+            // Always called, even with empty list
         }
 
         // Products are automatically fetched when billing connection is established!
@@ -71,7 +75,8 @@ class SettingsActivityExample : ComponentActivity() {
 
         // Also observe here (optional, but shows real-time updates)
         lifecycleScope.launch {
-            billingKit.activeSubscriptionsFlow.collect { activeSubscriptions ->
+            billingKit.subscriptionsFlow.collect { subscriptions ->
+                val activeSubscriptions = subscriptions.filter { it.isActive }
                 println("SettingsActivity: Active subscriptions - ${activeSubscriptions.size}")
                 updateSettingsUI(activeSubscriptions)
             }
@@ -113,7 +118,6 @@ class SubscriptionViewModel {
 
     // Expose Flow from BillingKit
     val subscriptions = billingKit.subscriptionsFlow
-    val activeSubscriptions = billingKit.activeSubscriptionsFlow
 
     // Fetch products
     fun fetchProducts(lifecycleOwner: androidx.lifecycle.LifecycleOwner) {
@@ -160,9 +164,10 @@ class SettingsActivityWithViewModel : ComponentActivity() {
 
         viewModel = SubscriptionViewModel()
 
-        // Observe active subscriptions
+        // Observe subscriptions and filter for active ones
         lifecycleScope.launch {
-            viewModel.activeSubscriptions.collect { activeSubscriptions ->
+            viewModel.subscriptions.collect { subscriptions ->
+                val activeSubscriptions = subscriptions.filter { it.isActive }
                 // Auto-updates when status changes
                 println("SettingsActivity (ViewModel): ${activeSubscriptions.size} active")
             }
@@ -225,7 +230,8 @@ class RealWorldExample {
             val billingKit = BillingKit.getInstance()
 
             lifecycleScope.launch {
-                billingKit.activeSubscriptionsFlow.collect { active ->
+                billingKit.subscriptionsFlow.collect { subscriptions ->
+                    val active = subscriptions.filter { it.isActive }
                     // This updates AUTOMATICALLY when user subscribes
                     // in PaywallActivity!
                     if (active.isEmpty()) {
@@ -299,36 +305,32 @@ class RealWorldExample {
  *
  * 1. OBSERVE SUBSCRIPTIONS (Flow-based):
  *    - lifecycleScope.launch { billingKit.subscriptionsFlow.collect { subscriptions -> } }
- *    - lifecycleScope.launch { billingKit.activeSubscriptionsFlow.collect { active -> } }
+ *    - Filter for active subscriptions: subscriptions.filter { it.isActive }
  *    - Auto-updates when subscriptions change
  *
  * 2. OBSERVE PURCHASES (Listener-based):
- *    - billingKit.setPurchaseUpdateListener { purchases -> }
- *    - Receives List<Purchase> - all active purchases
- *    - Empty list if no active purchases
+ *    - billingKit.setPurchaseUpdateListener(lifecycleOwner) { owner, purchases -> }
+ *    - Receives LifecycleOwner and List<Purchase>
+ *    - Always called, even with empty list (no active purchases)
+ *    - Automatically queries purchases on activity resume
+ *    - Automatically cleans up when activity is destroyed
  *    - Just ONE method, no error callback needed!
  *
- * 3. OBSERVE SUBSCRIPTIONS (Listener-based alternative):
- *    - billingKit.setSubscriptionUpdateListener { subscriptions -> }
- *    - Receives List<SubscriptionDetails>
- *    - Empty list if error or no subscriptions
- *    - Just ONE method, no error callback needed!
- *
- * 4. FETCH WITH LIFECYCLE:
+ * 3. FETCH WITH LIFECYCLE:
  *    - billingKit.fetchProducts(this) // 'this' is LifecycleOwner
- *    - Automatically fetches on ON_START
+ *    - Automatically fetches products on ON_START
  *    - Smart debouncing (won't spam requests)
  *
- * 5. SUBSCRIBE ANYWHERE:
+ * 4. SUBSCRIBE ANYWHERE:
  *    - billingKit.subscribe(activity, productId) { }
  *    - When successful, ALL observers update automatically
  *
- * 6. NO MANUAL UPDATES NEEDED:
+ * 5. NO MANUAL UPDATES NEEDED:
  *    - Don't manually call fetch after subscribe
  *    - Don't manually update UI in multiple places
  *    - Flow/Listeners handle everything!
  *
- * 7. LIFECYCLE AWARE:
+ * 6. LIFECYCLE AWARE:
  *    - Collection stops when screen is destroyed
  *    - Restarts when screen is recreated
  *    - No memory leaks!

@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,23 +64,35 @@ fun SubscriptionScreen(modifier: Modifier = Modifier) {
 
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    // Optional: Set up purchase listener for purchase updates
-    // (Not needed if using subscriptionsFlow which already includes active status)
-    /*
-    DisposableEffect(Unit) {
-        billingKit.setPurchaseUpdateListener { purchases ->
-            Log.d("BillingKit", "Purchases updated: ${purchases.size} active purchases")
+    // Set up purchase listener with lifecycle awareness
+    // This will:
+    // - Immediately query purchases and call the listener
+    // - Automatically query purchases on ON_RESUME (when activity resumes)
+    // - Always call the listener, even with empty list
+    // - Automatically cleanup when activity is destroyed (no manual removal needed)
+    DisposableEffect(lifecycleOwner) {
+        billingKit.setPurchaseUpdateListener(lifecycleOwner) { owner, purchases ->
+            // Handle purchase updates (always called, even with empty list)
+            // owner = lifecycle owner (Activity) for lifecycle-aware operations
+            statusMessage = if (purchases.isEmpty()) {
+                "No active purchases"
+            } else {
+                "Purchases updated: ${purchases.size} active purchases"
+            }
         }
 
         onDispose {
-            billingKit.removePurchaseUpdateListener()
+            // Optional: Manual cleanup (auto-cleanup happens on ON_DESTROY)
+            // billingKit.removePurchaseUpdateListener()
         }
     }
-    */
 
-    // Products are automatically fetched when billing connection is established!
-    // No need to manually call fetchProducts()
-    // Optional: You can still call fetchProducts(lifecycleOwner) for lifecycle-aware refresh
+    // Enable lifecycle-aware product fetching
+    // This will fetch products on ON_START
+    DisposableEffect(lifecycleOwner) {
+        billingKit.fetchProducts(lifecycleOwner)
+        onDispose { }
+    }
 
     Column(
         modifier = modifier

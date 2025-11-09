@@ -7,7 +7,6 @@ import androidx.lifecycle.LifecycleOwner
 import com.android.billingclient.api.Purchase
 import com.shibaprasadsahu.billingkit.api.PurchaseUpdateListener
 import com.shibaprasadsahu.billingkit.api.SubscriptionManager
-import com.shibaprasadsahu.billingkit.api.SubscriptionUpdateListener
 import com.shibaprasadsahu.billingkit.model.PricingPhase
 import com.shibaprasadsahu.billingkit.model.PricingPhaseType
 import com.shibaprasadsahu.billingkit.model.PurchaseResult
@@ -53,17 +52,13 @@ internal class SubscriptionManagerImpl(
     }
 
     // Listeners
-    private var subscriptionUpdateListener: SubscriptionUpdateListener? = null
     private var purchaseUpdateListener: PurchaseUpdateListener? = null
+    private var purchaseListenerLifecycleOwner: LifecycleOwner? = null
 
     // StateFlows for reactive programming
     private val _subscriptionsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
     override val subscriptionsFlow: StateFlow<List<SubscriptionDetails>> =
         _subscriptionsFlow.asStateFlow()
-
-    private val _activeSubscriptionsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
-    override val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>> =
-        _activeSubscriptionsFlow.asStateFlow()
 
     // Caching and state management - lazy initialization for better performance
     private val cachedSubscriptions by lazy { mutableListOf<SubscriptionDetails>() }
@@ -77,26 +72,80 @@ internal class SubscriptionManagerImpl(
     private val MAX_RETRY_ATTEMPTS = 3
     private val RETRY_DELAY_MS = 3000L // 3 seconds base delay
 
-    override fun setSubscriptionUpdateListener(listener: SubscriptionUpdateListener) {
-        subscriptionUpdateListener = listener
-        // Immediately deliver cached data if available
-        if (cachedSubscriptions.isNotEmpty()) {
-            scope.launch(Dispatchers.Main) {
-                listener.onSubscriptionsUpdated(cachedSubscriptions.toList())
+    // Purchase query management (race condition protection)
+    private val isQueryingPurchases by lazy { AtomicBoolean(false) }
+    private val purchasesMutex by lazy { Mutex() } // Protects updateActivePurchases
+
+    override fun setPurchaseUpdateListener(lifecycleOwner: LifecycleOwner, listener: PurchaseUpdateListener) {
+        purchaseUpdateListener = listener
+        purchaseListenerLifecycleOwner = lifecycleOwner
+
+        // Set up lifecycle observer
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    // Query purchases with race condition protection
+                    queryPurchasesWithProtection("ON_RESUME")
+                }
+                Lifecycle.Event.ON_DESTROY -> {
+                    // Automatically cleanup when lifecycle is destroyed
+                    BillingLogger.debug("Lifecycle destroyed, auto-removing purchase listener")
+                    removePurchaseUpdateListener()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        // Immediately deliver current purchases (or empty list if none)
+        queryPurchasesWithProtection("initial setup")
+    }
+
+    /**
+     * Query purchases with race condition protection
+     *
+     * Protection strategy:
+     * 1. isQueryingPurchases flag prevents duplicate listener-triggered queries
+     * 2. purchasesMutex in updateActivePurchases prevents concurrent map modifications
+     *
+     * This ensures:
+     * - If initial query is still running when ON_RESUME fires, the duplicate is skipped
+     * - If fetchProducts and queryPurchases run concurrently, shared state is protected
+     */
+    private fun queryPurchasesWithProtection(source: String) {
+        // Check if already querying (race condition protection)
+        if (isQueryingPurchases.get()) {
+            BillingLogger.debug("Purchase query already in progress, skipping duplicate request from $source")
+            return
+        }
+
+        scope.launch {
+            // Double-check and set flag atomically (double-checked locking pattern)
+            if (!isQueryingPurchases.compareAndSet(false, true)) {
+                BillingLogger.debug("Purchase query already in progress (atomic check), skipping duplicate from $source")
+                return@launch
+            }
+
+            try {
+                BillingLogger.debug("Querying purchases from $source")
+                val purchases = billingClient.queryPurchases()
+                // updateActivePurchases has its own mutex for thread-safe map updates
+                updateActivePurchases(purchases)
+                BillingLogger.debug("Purchase query from $source completed: ${purchases.size} purchases")
+            } catch (e: Exception) {
+                BillingLogger.error("Error querying purchases from $source: ${e.message}", e)
+                // Still notify listener with empty list on error
+                notifyPurchaseUpdate(emptyList())
+            } finally {
+                // Always release the flag (even on exception)
+                isQueryingPurchases.set(false)
             }
         }
     }
 
-    override fun removeSubscriptionUpdateListener() {
-        subscriptionUpdateListener = null
-    }
-
-    override fun setPurchaseUpdateListener(listener: PurchaseUpdateListener) {
-        purchaseUpdateListener = listener
-    }
-
     override fun removePurchaseUpdateListener() {
         purchaseUpdateListener = null
+        purchaseListenerLifecycleOwner = null
     }
 
     override fun fetchProducts(
@@ -105,7 +154,7 @@ internal class SubscriptionManagerImpl(
     ) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) {
-                // Fetch on ON_START (not ON_RESUME to avoid over-fetching)
+                // Fetch products on ON_START
                 fetchProducts(forceRefresh = false, callback = callback)
             }
         }
@@ -354,55 +403,52 @@ internal class SubscriptionManagerImpl(
     }
 
     private suspend fun updateActivePurchases(purchases: List<Purchase>) {
-        // Clear expired purchases from the map
-        activePurchases.clear()
+        // Use mutex to prevent concurrent modifications of activePurchases map
+        purchasesMutex.withLock {
+            // Clear expired purchases from the map
+            activePurchases.clear()
 
-        val activePurchasesList = mutableListOf<Purchase>()
+            val activePurchasesList = mutableListOf<Purchase>()
 
-        purchases.forEach { purchase ->
-            purchase.products.forEach { productId ->
-                if (productId in subscriptionIds) {
-                    // Only add to active purchases if not expired
-                    if (isSubscriptionActive(purchase)) {
-                        activePurchases[productId] = purchase
-                        if (purchase !in activePurchasesList) {
-                            activePurchasesList.add(purchase)
+            purchases.forEach { purchase ->
+                purchase.products.forEach { productId ->
+                    if (productId in subscriptionIds) {
+                        // Only add to active purchases if not expired
+                        if (isSubscriptionActive(purchase)) {
+                            activePurchases[productId] = purchase
+                            if (purchase !in activePurchasesList) {
+                                activePurchasesList.add(purchase)
+                            }
+                            BillingLogger.debug("Active subscription found for $productId")
+
+                            // Auto-acknowledge purchases if not already acknowledged
+                            if (!purchase.isAcknowledged) {
+                                BillingLogger.debug("Auto-acknowledging purchase for $productId")
+                                billingClient.acknowledgePurchase(purchase.purchaseToken)
+                            }
+                        } else {
+                            BillingLogger.debug("Expired subscription filtered out for $productId")
                         }
-                        BillingLogger.debug("Active subscription found for $productId")
-
-                        // Auto-acknowledge purchases if not already acknowledged
-                        if (!purchase.isAcknowledged) {
-                            BillingLogger.debug("Auto-acknowledging purchase for $productId")
-                            billingClient.acknowledgePurchase(purchase.purchaseToken)
-                        }
-                    } else {
-                        BillingLogger.debug("Expired subscription filtered out for $productId")
                     }
                 }
             }
-        }
 
-        // Notify purchase update with only active purchases (can be empty list)
-        notifyPurchaseUpdate(activePurchasesList)
+            // Notify purchase update with only active purchases (can be empty list)
+            notifyPurchaseUpdate(activePurchasesList)
+        }
     }
 
     private suspend fun notifySubscriptionUpdate(subscriptions: List<SubscriptionDetails>) {
-        // Update StateFlows
+        // Update StateFlow
         _subscriptionsFlow.value = subscriptions
-        _activeSubscriptionsFlow.value = subscriptions.filter { it.isActive }
-
-        // Update listener (for callback-based API)
-        subscriptionUpdateListener?.let { listener ->
-            withContext(Dispatchers.Main) {
-                listener.onSubscriptionsUpdated(subscriptions)
-            }
-        }
     }
 
     private suspend fun notifyPurchaseUpdate(purchases: List<Purchase>) {
         purchaseUpdateListener?.let { listener ->
-            withContext(Dispatchers.Main) {
-                listener.onPurchasesUpdated(purchases)
+            purchaseListenerLifecycleOwner?.let { lifecycleOwner ->
+                withContext(Dispatchers.Main) {
+                    listener.onPurchasesUpdated(lifecycleOwner, purchases)
+                }
             }
         }
     }
@@ -412,13 +458,6 @@ internal class SubscriptionManagerImpl(
         callback: ((Result<List<SubscriptionDetails>>) -> Unit)?
     ) {
         BillingLogger.error("Error fetching products: ${error.message}", error)
-
-        // Notify with empty list on error
-        subscriptionUpdateListener?.let { listener ->
-            withContext(Dispatchers.Main) {
-                listener.onSubscriptionsUpdated(emptyList())
-            }
-        }
 
         callback?.let {
             withContext(Dispatchers.Main) {
@@ -567,52 +606,5 @@ internal class SubscriptionManagerImpl(
         callback: (PurchaseResult) -> Unit
     ) {
         subscribeWithDetails(activity, productId, basePlanId, offerId, callback)
-    }
-
-    override fun hasActiveSubscription(
-        productId: String,
-        callback: (Boolean) -> Unit
-    ) {
-        scope.launch {
-            try {
-                val purchases = billingClient.queryPurchases()
-                val hasActive = purchases.any { purchase ->
-                    productId in purchase.products && isSubscriptionActive(purchase)
-                }
-
-                withContext(Dispatchers.Main) {
-                    callback(hasActive)
-                }
-            } catch (e: Exception) {
-                BillingLogger.error("Error checking subscription status: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    callback(false)
-                }
-            }
-        }
-    }
-
-    override fun hasAnyActiveSubscription(callback: (Boolean) -> Unit) {
-        scope.launch {
-            try {
-                val purchases = billingClient.queryPurchases()
-                val hasAny = purchases.any { purchase ->
-                    purchase.products.any { it in subscriptionIds } && isSubscriptionActive(purchase)
-                }
-
-                withContext(Dispatchers.Main) {
-                    callback(hasAny)
-                }
-            } catch (e: Exception) {
-                BillingLogger.error("Error checking subscription status: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    callback(false)
-                }
-            }
-        }
-    }
-
-    override fun getActiveSubscription(): SubscriptionDetails? {
-        return cachedSubscriptions.firstOrNull { it.isActive }
     }
 }
