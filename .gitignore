@@ -99,3 +99,6 @@ render.experimental.xml
 
 # Android Profiling
 *.hprof
+
+# Claude config and rules
+.claude/

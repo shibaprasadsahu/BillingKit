@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -175,27 +176,32 @@ internal class SubscriptionManagerImpl(
                 fetchMutex.withLock {
                     if (isFetching.compareAndSet(false, true)) {
                         try {
-                            BillingLogger.debug("Fetching subscription products (attempt $attempt/$MAX_RETRY_ATTEMPTS)")
+                            BillingLogger.debug("Fetching subscription products and purchases (attempt $attempt/$MAX_RETRY_ATTEMPTS)")
 
-                            // Query product details
-                            val productDetailsList =
-                                billingClient.querySubscriptionDetailsById(subscriptionIds)
-
-                            if (productDetailsList.isEmpty()) {
-                                BillingLogger.warn("No products found for subscription IDs: $subscriptionIds")
-                            }
-
-                            // Query active purchases
+                            // ALWAYS query purchases first (important for subscription status)
                             val purchases = billingClient.queryPurchases()
                             updateActivePurchases(purchases)
+                            BillingLogger.debug("Queried ${purchases.size} purchases, ${activePurchases.size} active after expiry check")
 
-                            // Map product details to SubscriptionDetails
-                            val subscriptionDetailsList =
+                            // Query product details only if subscription IDs are configured
+                            val subscriptionDetailsList = if (subscriptionIds.isNotEmpty()) {
+                                val productDetailsList =
+                                    billingClient.querySubscriptionDetailsById(subscriptionIds)
+
+                                if (productDetailsList.isEmpty()) {
+                                    BillingLogger.warn("No products found for subscription IDs: $subscriptionIds")
+                                }
+
+                                // Map product details to SubscriptionDetails
                                 productDetailsList.flatMap { productDetails ->
                                     productDetails.subscriptionOfferDetails?.map { offer ->
                                         createSubscriptionDetails(productDetails, offer)
                                     } ?: emptyList()
                                 }
+                            } else {
+                                BillingLogger.debug("No subscription IDs configured, skipping product query")
+                                emptyList()
+                            }
 
                             // Update cache
                             cachedSubscriptions.clear()
@@ -204,9 +210,9 @@ internal class SubscriptionManagerImpl(
                             // Update timestamp
                             lastFetchTimestamp = System.currentTimeMillis()
 
-                            BillingLogger.info("Successfully fetched ${subscriptionDetailsList.size} subscription offers")
+                            BillingLogger.info("Successfully fetched ${subscriptionDetailsList.size} subscription offers and ${purchases.size} purchases")
 
-                            // Notify listeners
+                            // Notify listeners (ALWAYS, even if empty)
                             notifySubscriptionUpdate(subscriptionDetailsList)
 
                             // Invoke callback
@@ -307,23 +313,77 @@ internal class SubscriptionManagerImpl(
         }
     }
 
+    /**
+     * Check if a subscription purchase is still active (not expired)
+     * Parses the originalJson to extract expiryTimeMillis
+     */
+    private fun isSubscriptionActive(purchase: Purchase): Boolean {
+        // Check purchase state
+        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) {
+            return false
+        }
+
+        // Parse originalJson to get subscription expiry time
+        return try {
+            val jsonObject = JSONObject(purchase.originalJson)
+
+            // Check if expiryTimeMillis exists (only present for subscriptions)
+            if (jsonObject.has("expiryTimeMillis")) {
+                val expiryTimeMillis = jsonObject.getLong("expiryTimeMillis")
+                val currentTimeMillis = System.currentTimeMillis()
+
+                val isActive = currentTimeMillis < expiryTimeMillis
+
+                if (!isActive) {
+                    BillingLogger.debug("Subscription expired: expiryTime=$expiryTimeMillis, currentTime=$currentTimeMillis")
+                }
+
+                isActive
+            } else {
+                // If no expiry time, assume it's active if purchase state is PURCHASED
+                // This handles edge cases and one-time purchases
+                BillingLogger.warn("No expiryTimeMillis found in purchase JSON, assuming active")
+                true
+            }
+        } catch (e: Exception) {
+            BillingLogger.error("Error parsing purchase JSON for expiry check: ${e.message}", e)
+            // On error, fall back to checking purchase state only
+            // This maintains backward compatibility
+            true
+        }
+    }
+
     private suspend fun updateActivePurchases(purchases: List<Purchase>) {
+        // Clear expired purchases from the map
+        activePurchases.clear()
+
+        val activePurchasesList = mutableListOf<Purchase>()
+
         purchases.forEach { purchase ->
             purchase.products.forEach { productId ->
                 if (productId in subscriptionIds) {
-                    activePurchases[productId] = purchase
+                    // Only add to active purchases if not expired
+                    if (isSubscriptionActive(purchase)) {
+                        activePurchases[productId] = purchase
+                        if (purchase !in activePurchasesList) {
+                            activePurchasesList.add(purchase)
+                        }
+                        BillingLogger.debug("Active subscription found for $productId")
 
-                    // Auto-acknowledge purchases if not already acknowledged
-                    if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged) {
-                        BillingLogger.debug("Auto-acknowledging purchase for $productId")
-                        billingClient.acknowledgePurchase(purchase.purchaseToken)
+                        // Auto-acknowledge purchases if not already acknowledged
+                        if (!purchase.isAcknowledged) {
+                            BillingLogger.debug("Auto-acknowledging purchase for $productId")
+                            billingClient.acknowledgePurchase(purchase.purchaseToken)
+                        }
+                    } else {
+                        BillingLogger.debug("Expired subscription filtered out for $productId")
                     }
                 }
             }
         }
 
-        // Notify purchase update with all active purchases
-        notifyPurchaseUpdate(purchases)
+        // Notify purchase update with only active purchases (can be empty list)
+        notifyPurchaseUpdate(activePurchasesList)
     }
 
     private suspend fun notifySubscriptionUpdate(subscriptions: List<SubscriptionDetails>) {
@@ -517,8 +577,7 @@ internal class SubscriptionManagerImpl(
             try {
                 val purchases = billingClient.queryPurchases()
                 val hasActive = purchases.any { purchase ->
-                    purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                            productId in purchase.products
+                    productId in purchase.products && isSubscriptionActive(purchase)
                 }
 
                 withContext(Dispatchers.Main) {
@@ -538,8 +597,7 @@ internal class SubscriptionManagerImpl(
             try {
                 val purchases = billingClient.queryPurchases()
                 val hasAny = purchases.any { purchase ->
-                    purchase.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                            purchase.products.any { it in subscriptionIds }
+                    purchase.products.any { it in subscriptionIds } && isSubscriptionActive(purchase)
                 }
 
                 withContext(Dispatchers.Main) {
