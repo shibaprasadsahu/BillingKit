@@ -34,7 +34,7 @@ Add the dependency:
 
 ```gradle
 dependencies {
-    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha02")
+    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha03")
 }
 ```
 

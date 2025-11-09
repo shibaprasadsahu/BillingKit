@@ -348,7 +348,7 @@ maven { url = uri("https://jitpack.io") }
 
 // build.gradle.kts
 dependencies {
-    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha02")
+    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha03")
 }
 ```
 
@@ -488,6 +488,6 @@ billingKit.hasActiveSubscription("premium_monthly") { isActive ->
 
 ---
 
-**Last Updated**: 2025-10-09
-**Library Version**: 0.1-alpha02
+**Last Updated**: 2025-11-09
+**Library Version**: 0.1-alpha03
 **Billing Library**: 8.0.0
