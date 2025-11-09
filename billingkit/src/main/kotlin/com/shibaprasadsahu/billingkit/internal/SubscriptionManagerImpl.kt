@@ -95,7 +95,11 @@ internal class SubscriptionManagerImpl(
                 else -> {}
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
+
+        // Add observer on main thread (required by lifecycle)
+        scope.launch(Dispatchers.Main) {
+            lifecycleOwner.lifecycle.addObserver(observer)
+        }
 
         // Immediately deliver current purchases (or empty list if none)
         queryPurchasesWithProtection("initial setup")
@@ -158,11 +162,15 @@ internal class SubscriptionManagerImpl(
                 fetchProducts(forceRefresh = false, callback = callback)
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
 
-        // Fetch immediately if already started
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            fetchProducts(forceRefresh = false, callback = callback)
+        // Add observer on main thread (required by lifecycle)
+        scope.launch(Dispatchers.Main) {
+            lifecycleOwner.lifecycle.addObserver(observer)
+
+            // Fetch immediately if already started
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                fetchProducts(forceRefresh = false, callback = callback)
+            }
         }
     }
 
