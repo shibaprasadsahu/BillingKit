@@ -141,6 +141,43 @@ override fun onDestroy() {
 }
 ```
 
+## 🆓 Free Trial Support
+
+BillingKit makes it easy to handle free trials and check user eligibility.
+
+```kotlin
+// Check if user is eligible for free trial
+val isEligible = subscription.isUserEligibleForFreeTrial
+
+// Subscribe with Free Trial control
+// true  = Use free trial (if available)
+// false = Skip free trial (charge immediately)
+// null  = Auto-select best offer (default)
+billingKit.subscribe(activity, "premium_monthly", useFreeTrial = true) { result ->
+    // Handle result
+}
+```
+
+## 🔄 Restore Purchases
+
+Users can restore their existing purchases (e.g., after reinstalling the app or changing devices).
+
+```kotlin
+billingKit.restorePurchases { result ->
+    result.onSuccess { activeSubscriptions ->
+        if (activeSubscriptions.isNotEmpty()) {
+            // Restore successful, user has active subscriptions
+            showRestoreSuccess()
+        } else {
+            // No active subscriptions found
+            showNoPurchasesFound()
+        }
+    }.onFailure { error ->
+        showError(error.message)
+    }
+}
+```
+
 ## 📚 Key APIs
 
 ### Check Subscription Status

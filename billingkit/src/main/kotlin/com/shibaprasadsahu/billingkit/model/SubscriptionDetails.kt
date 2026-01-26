@@ -30,6 +30,7 @@ data class SubscriptionDetails(
     // Offer information
     val hasFreeTrial: Boolean,          // Whether this offer includes a free trial
     val freeTrialDays: Int?,            // Number of free trial days if available
+    val isUserEligibleForFreeTrial: Boolean = false, // Whether the current user is eligible for free trial
     val hasIntroductoryPrice: Boolean,  // Whether this offer has introductory pricing
 
     // Subscription status

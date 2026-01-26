@@ -94,4 +94,41 @@ interface SubscriptionManager {
         offerId: String? = null,
         callback: (PurchaseResult) -> Unit
     )
+
+    /**
+     * Subscribe to a product with control over free trial usage
+     *
+     * @param activity The activity to launch the billing flow
+     * @param productId The subscription product ID
+     * @param useFreeTrial If true, use the free trial offer if eligible.
+     *                     If false, use the regular offer (skips trial).
+     *                     If null, auto-select best offer (current behavior).
+     * @param callback Called when purchase completes
+     */
+    fun subscribe(
+        activity: Activity,
+        productId: String,
+        useFreeTrial: Boolean?,
+        callback: (PurchaseResult) -> Unit
+    )
+
+    /**
+     * Get the free trial offer for a product if user is eligible
+     * @return SubscriptionDetails with free trial, or null if not eligible
+     */
+    fun getFreeTrialOffer(productId: String): SubscriptionDetails?
+
+    /**
+     * Get the regular (non-trial) offer for a product
+     * @return SubscriptionDetails without free trial, or null if not found
+     */
+    fun getRegularOffer(productId: String): SubscriptionDetails?
+
+    /**
+     * Restore purchases
+     * Fetches the latest purchase status from Google Play and updates all listeners
+     *
+     * @param callback Callback with the list of active subscriptions
+     */
+    fun restorePurchases(callback: (Result<List<SubscriptionDetails>>) -> Unit)
 }

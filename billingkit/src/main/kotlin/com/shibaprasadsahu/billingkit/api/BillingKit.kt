@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.LifecycleOwner
 import com.shibaprasadsahu.billingkit.LogLevel
 import com.shibaprasadsahu.billingkit.internal.BillingClientWrapper
+import com.shibaprasadsahu.billingkit.internal.BillingDeviceIdManager
 import com.shibaprasadsahu.billingkit.internal.BillingLogger
 import com.shibaprasadsahu.billingkit.internal.SubscriptionManagerImpl
 import com.shibaprasadsahu.billingkit.model.PurchaseResult
@@ -28,7 +29,8 @@ import kotlin.concurrent.withLock
  * ```
  */
 class BillingKit private constructor(
-    private val subscriptionManager: SubscriptionManager
+    private val subscriptionManager: SubscriptionManager,
+    private val deviceIdManager: BillingDeviceIdManager
 ) {
 
     // ===================================
@@ -140,6 +142,69 @@ class BillingKit private constructor(
     ) = subscriptionManager.subscribe(activity, productId, basePlanId, offerId, callback)
 
     /**
+     * Subscribe to a product with control over free trial usage
+     *
+     * @param activity The activity to launch the billing flow
+     * @param productId The subscription product ID
+     * @param useFreeTrial If true, use the free trial offer if eligible.
+     *                     If false, use the regular offer (skips trial).
+     *                     If null, auto-select best offer (current behavior).
+     * @param callback Called when purchase completes
+     */
+    fun subscribe(
+        activity: Activity,
+        productId: String,
+        useFreeTrial: Boolean?,
+        callback: (PurchaseResult) -> Unit
+    ) = subscriptionManager.subscribe(activity, productId, useFreeTrial, callback)
+
+    // ===================================
+    // Free Trial Helpers
+    // ===================================
+
+    /**
+     * Get the free trial offer for a product if user is eligible
+     * @param productId The subscription product ID
+     * @return SubscriptionDetails with free trial, or null if not eligible
+     */
+    fun getFreeTrialOffer(productId: String): SubscriptionDetails? =
+        subscriptionManager.getFreeTrialOffer(productId)
+
+    /**
+     * Get the regular (non-trial) offer for a product
+     * @param productId The subscription product ID
+     * @return SubscriptionDetails without free trial, or null if not found
+     */
+    fun getRegularOffer(productId: String): SubscriptionDetails? =
+        subscriptionManager.getRegularOffer(productId)
+
+    // ===================================
+    // Restore Purchases
+    // ===================================
+
+    /**
+     * Restore purchases
+     * Fetches the latest purchase status from Google Play and updates all listeners.
+     * Use this when the user clicks a "Restore Purchases" button.
+     *
+     * @param callback Callback with the list of active subscriptions
+     */
+    fun restorePurchases(callback: (Result<List<SubscriptionDetails>>) -> Unit) =
+        subscriptionManager.restorePurchases(callback)
+
+    // ===================================
+    // Device ID (PersistID Integration)
+    // ===================================
+
+    /**
+     * Get the persistent unique device identifier.
+     * This ID survives app reinstalls (backed by BlockStore).
+     *
+     * @return Device ID string, or empty string if not yet initialized
+     */
+    suspend fun getDeviceId(): String = deviceIdManager.getDeviceId()
+
+    /**
      * Builder for configuring BillingKit
      */
     class Builder(private val context: Context) {
@@ -217,8 +282,13 @@ class BillingKit private constructor(
                 billingClient = billingClient,
                 subscriptionIds = subscriptionIds
             )
+            
+            val deviceIdManager = BillingDeviceIdManager(
+                context = context,
+                logLevel = logLevel
+            )
 
-            return BillingKit(subscriptionManager)
+            return BillingKit(subscriptionManager, deviceIdManager)
         }
     }
 
@@ -285,8 +355,13 @@ class BillingKit private constructor(
                             billingClient = billingClient,
                             subscriptionIds = subscriptionIds
                         )
+                        
+                        val deviceIdManager = BillingDeviceIdManager(
+                            context = context,
+                            logLevel = logLevel
+                        )
 
-                        instance = BillingKit(subscriptionManager)
+                        instance = BillingKit(subscriptionManager, deviceIdManager)
                     }
                 }
             }

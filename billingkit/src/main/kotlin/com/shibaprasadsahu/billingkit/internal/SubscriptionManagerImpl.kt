@@ -347,6 +347,7 @@ internal class SubscriptionManagerImpl(
             priceCurrencyCode = regularPhase.priceCurrencyCode,
             hasFreeTrial = freeTrialPhase != null,
             freeTrialDays = freeTrialPhase?.durationDays,
+            isUserEligibleForFreeTrial = freeTrialPhase != null, // Google only returns offers user is eligible for
             hasIntroductoryPrice = introductoryPhase != null,
             isActive = activePurchases.containsKey(productDetails.productId),
             offerTags = offer.offerTags
@@ -614,5 +615,95 @@ internal class SubscriptionManagerImpl(
         callback: (PurchaseResult) -> Unit
     ) {
         subscribeWithDetails(activity, productId, basePlanId, offerId, callback)
+    }
+
+    override fun subscribe(
+        activity: Activity,
+        productId: String,
+        useFreeTrial: Boolean?,
+        callback: (PurchaseResult) -> Unit
+    ) {
+        scope.launch {
+            try {
+                BillingLogger.debug("Starting subscription flow for $productId with useFreeTrial: $useFreeTrial")
+
+                val subscription = when (useFreeTrial) {
+                    true -> {
+                        // User explicitly wants free trial
+                        val trialOffer = getFreeTrialOffer(productId)
+                        if (trialOffer == null) {
+                            BillingLogger.warn("Free trial requested but not available for $productId, falling back to first offer")
+                            cachedSubscriptions.firstOrNull { it.productId == productId }
+                        } else {
+                            trialOffer
+                        }
+                    }
+                    false -> {
+                        // User explicitly wants to skip free trial
+                        val regularOffer = getRegularOffer(productId)
+                        if (regularOffer == null) {
+                            BillingLogger.warn("Regular offer requested but not available for $productId, falling back to first offer")
+                            cachedSubscriptions.firstOrNull { it.productId == productId }
+                        } else {
+                            regularOffer
+                        }
+                    }
+                    null -> {
+                        // Auto-select (current behavior - first available)
+                        cachedSubscriptions.firstOrNull { it.productId == productId }
+                    }
+                }
+
+                if (subscription != null) {
+                    subscribeWithDetails(
+                        activity,
+                        productId,
+                        subscription.basePlanId,
+                        subscription.offerId,
+                        callback
+                    )
+                } else {
+                    BillingLogger.error("No subscription found for $productId")
+                    withContext(Dispatchers.Main) {
+                        callback(PurchaseResult.Error("Product not found", -1))
+                    }
+                }
+            } catch (e: Exception) {
+                BillingLogger.error("Error during subscription: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    callback(PurchaseResult.Error(e.message ?: "Unknown error", -1))
+                }
+            }
+        }
+    }
+
+    override fun getFreeTrialOffer(productId: String): SubscriptionDetails? {
+        return cachedSubscriptions.firstOrNull {
+            it.productId == productId && it.hasFreeTrial
+        }
+    }
+
+    override fun getRegularOffer(productId: String): SubscriptionDetails? {
+        return cachedSubscriptions.firstOrNull {
+            it.productId == productId && !it.hasFreeTrial
+        }
+    }
+
+    override fun restorePurchases(callback: (Result<List<SubscriptionDetails>>) -> Unit) {
+        BillingLogger.debug("Restoring purchases...")
+        
+        // Force refresh ensures we get the latest data from Google Play
+        // This also updates the subscriptionsFlow and notifies specific listeners
+        fetchProducts(forceRefresh = true) { result ->
+            result.onSuccess { subscriptions ->
+                // Filter only active subscriptions to return to the caller
+                val activeSubscriptions = subscriptions.filter { it.isActive }
+                BillingLogger.info("Restored ${activeSubscriptions.size} active subscriptions")
+                callback(Result.success(activeSubscriptions))
+            }.onFailure { error ->
+                BillingLogger.error("Failed to restore purchases: ${error.message}", error)
+                callback(Result.failure(error))
+            }
+        }
     }
 }

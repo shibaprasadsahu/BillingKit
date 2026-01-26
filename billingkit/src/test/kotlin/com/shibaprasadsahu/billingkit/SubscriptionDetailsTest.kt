@@ -211,4 +211,141 @@ class SubscriptionDetailsTest {
         assertTrue(introPhase.priceAmountMicros > 0)
         assertTrue(regularPhase.priceAmountMicros > 0)
     }
+
+    @Test
+    fun `subscriptionDetails with user eligible for free trial`() {
+        // Given
+        val freeTrialPhase = PricingPhase(
+            formattedPrice = "Free",
+            priceAmountMicros = 0,
+            priceCurrencyCode = "USD",
+            billingPeriod = "P7D",
+            billingCycleCount = 1,
+            recurrenceMode = 2,
+            phaseType = PricingPhaseType.FREE_TRIAL,
+            durationDays = 7
+        )
+
+        val regularPhase = PricingPhase(
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            billingPeriod = "P1M",
+            billingCycleCount = 1,
+            recurrenceMode = 1,
+            phaseType = PricingPhaseType.REGULAR,
+            durationDays = 30
+        )
+
+        // When - user is eligible (Google returns free trial offer)
+        val subscription = SubscriptionDetails(
+            productId = "premium_monthly",
+            productTitle = "Premium Monthly",
+            productDescription = "Premium subscription",
+            basePlanId = "base-plan",
+            offerId = "free-trial-offer",
+            offerToken = "token",
+            pricingPhases = listOf(freeTrialPhase, regularPhase),
+            freeTrialPhase = freeTrialPhase,
+            introductoryPhase = null,
+            regularPhase = regularPhase,
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            hasFreeTrial = true,
+            freeTrialDays = 7,
+            isUserEligibleForFreeTrial = true,
+            hasIntroductoryPrice = false,
+            isActive = false,
+            offerTags = listOf("trial")
+        )
+
+        // Then
+        assertTrue(subscription.hasFreeTrial)
+        assertTrue(subscription.isUserEligibleForFreeTrial)
+        assertEquals(7, subscription.freeTrialDays)
+    }
+
+    @Test
+    fun `subscriptionDetails with user not eligible for free trial`() {
+        // Given - user already used free trial, so regular offer is returned
+        val regularPhase = PricingPhase(
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            billingPeriod = "P1M",
+            billingCycleCount = 1,
+            recurrenceMode = 1,
+            phaseType = PricingPhaseType.REGULAR,
+            durationDays = 30
+        )
+
+        // When - user is NOT eligible (Google doesn't return free trial offer)
+        val subscription = SubscriptionDetails(
+            productId = "premium_monthly",
+            productTitle = "Premium Monthly",
+            productDescription = "Premium subscription",
+            basePlanId = "base-plan",
+            offerId = null,
+            offerToken = "token",
+            pricingPhases = listOf(regularPhase),
+            freeTrialPhase = null,
+            introductoryPhase = null,
+            regularPhase = regularPhase,
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            hasFreeTrial = false,
+            freeTrialDays = null,
+            isUserEligibleForFreeTrial = false,
+            hasIntroductoryPrice = false,
+            isActive = false,
+            offerTags = emptyList()
+        )
+
+        // Then
+        assertFalse(subscription.hasFreeTrial)
+        assertFalse(subscription.isUserEligibleForFreeTrial)
+        assertNull(subscription.freeTrialDays)
+    }
+
+    @Test
+    fun `isUserEligibleForFreeTrial defaults to false`() {
+        // Given
+        val regularPhase = PricingPhase(
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            billingPeriod = "P1M",
+            billingCycleCount = 1,
+            recurrenceMode = 1,
+            phaseType = PricingPhaseType.REGULAR,
+            durationDays = 30
+        )
+
+        // When - not specifying isUserEligibleForFreeTrial (uses default)
+        val subscription = SubscriptionDetails(
+            productId = "premium_monthly",
+            productTitle = "Premium Monthly",
+            productDescription = "Premium subscription",
+            basePlanId = "base-plan",
+            offerId = null,
+            offerToken = "token",
+            pricingPhases = listOf(regularPhase),
+            freeTrialPhase = null,
+            introductoryPhase = null,
+            regularPhase = regularPhase,
+            formattedPrice = "$9.99",
+            priceAmountMicros = 9990000,
+            priceCurrencyCode = "USD",
+            hasFreeTrial = false,
+            freeTrialDays = null,
+            hasIntroductoryPrice = false,
+            isActive = false,
+            offerTags = emptyList()
+        )
+
+        // Then - default value should be false
+        assertFalse(subscription.isUserEligibleForFreeTrial)
+    }
 }

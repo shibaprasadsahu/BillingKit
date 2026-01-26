@@ -14,6 +14,7 @@ BillingKit is a modern Android billing library built on top of Google Play Billi
 │  PurchaseResult (sealed class)   │
 │  LogLevel (enum)                 │
 │  Listeners (fun interfaces)      │
+│  Free Trial Helpers (methods)    │
 └────────────┬─────────────────────┘
              │
 ┌────────────▼─────────────────────┐
@@ -429,6 +430,21 @@ billingKit.hasActiveSubscription("premium_monthly") { isActive ->
         enablePremiumFeatures()
     }
 }
+```
+
+### Free Trial Support
+```kotlin
+// Check eligibility
+if (subscription.isUserEligibleForFreeTrial) {
+    showTrialBadge()
+}
+
+// Get specific offers
+val trialOffer = billingKit.getFreeTrialOffer("premium_monthly")
+val regularOffer = billingKit.getRegularOffer("premium_monthly")
+
+// Subscribe with explicit trial choice
+billingKit.subscribe(activity, "premium_monthly", useFreeTrial = true) { }
 ```
 
 ## Troubleshooting
