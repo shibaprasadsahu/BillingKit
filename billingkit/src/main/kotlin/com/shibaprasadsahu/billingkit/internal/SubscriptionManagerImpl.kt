@@ -240,6 +240,9 @@ internal class SubscriptionManagerImpl(
                             updateActivePurchases(purchases)
                             BillingLogger.debug("Queried ${purchases.size} purchases, ${activePurchases.size} active after expiry check")
 
+
+
+
                             // Query product details only if subscription IDs are configured
                             val subscriptionDetailsList = if (subscriptionIds.isNotEmpty()) {
                                 val productDetailsList =
@@ -347,7 +350,7 @@ internal class SubscriptionManagerImpl(
             priceCurrencyCode = regularPhase.priceCurrencyCode,
             hasFreeTrial = freeTrialPhase != null,
             freeTrialDays = freeTrialPhase?.durationDays,
-            isUserEligibleForFreeTrial = freeTrialPhase != null, // Google only returns offers user is eligible for
+            isUserEligibleForFreeTrial = freeTrialPhase != null && !activePurchases.containsKey(productDetails.productId), // User cannot trial if already subscribed
             hasIntroductoryPrice = introductoryPhase != null,
             isActive = activePurchases.containsKey(productDetails.productId),
             offerTags = offer.offerTags
@@ -446,6 +449,8 @@ internal class SubscriptionManagerImpl(
             notifyPurchaseUpdate(activePurchasesList)
         }
     }
+
+
 
     private suspend fun notifySubscriptionUpdate(subscriptions: List<SubscriptionDetails>) {
         // Update StateFlow
