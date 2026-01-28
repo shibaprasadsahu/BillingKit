@@ -56,9 +56,13 @@ internal class SubscriptionManagerImpl(
     private var purchaseListenerLifecycleOwner: LifecycleOwner? = null
 
     // StateFlows for reactive programming
-    private val _subscriptionsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
-    override val subscriptionsFlow: StateFlow<List<SubscriptionDetails>> =
-        _subscriptionsFlow.asStateFlow()
+    private val _productsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
+    override val productsFlow: StateFlow<List<SubscriptionDetails>> =
+        _productsFlow.asStateFlow()
+
+    private val _activeSubscriptionsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
+    override val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>> =
+        _activeSubscriptionsFlow.asStateFlow()
 
     // Caching and state management - lazy initialization for better performance
     private val cachedSubscriptions by lazy { mutableListOf<SubscriptionDetails>() }
@@ -447,14 +451,25 @@ internal class SubscriptionManagerImpl(
 
             // Notify purchase update with only active purchases (can be empty list)
             notifyPurchaseUpdate(activePurchasesList)
+
+            // Also update the flows if we have cached products
+            if (cachedSubscriptions.isNotEmpty()) {
+                val updatedSubscriptions = cachedSubscriptions.map { details ->
+                    details.copy(isActive = activePurchases.containsKey(details.productId))
+                }
+                cachedSubscriptions.clear()
+                cachedSubscriptions.addAll(updatedSubscriptions)
+                notifySubscriptionUpdate(updatedSubscriptions)
+            }
         }
     }
 
 
 
     private suspend fun notifySubscriptionUpdate(subscriptions: List<SubscriptionDetails>) {
-        // Update StateFlow
-        _subscriptionsFlow.value = subscriptions
+        // Update StateFlows
+        _productsFlow.value = subscriptions
+        _activeSubscriptionsFlow.value = subscriptions.filter { it.isActive }
     }
 
     private suspend fun notifyPurchaseUpdate(purchases: List<Purchase>) {
@@ -698,7 +713,7 @@ internal class SubscriptionManagerImpl(
         BillingLogger.debug("Restoring purchases...")
         
         // Force refresh ensures we get the latest data from Google Play
-        // This also updates the subscriptionsFlow and notifies specific listeners
+        // This also updates the productsFlow and activeSubscriptionsFlow and notifies specific listeners
         fetchProducts(forceRefresh = true) { result ->
             result.onSuccess { subscriptions ->
                 // Filter only active subscriptions to return to the caller

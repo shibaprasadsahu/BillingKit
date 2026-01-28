@@ -59,8 +59,8 @@ fun SubscriptionScreen(modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val billingKit = remember { com.shibaprasadsahu.billingkit.api.BillingKit.getInstance() }
 
-    // Observe subscriptions Flow - automatically updates when data changes
-    val subscriptions by billingKit.subscriptionsFlow.collectAsState()
+    // Observe products Flow - automatically updates when data changes
+    val products by billingKit.productsFlow.collectAsState()
 
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
@@ -105,7 +105,7 @@ fun SubscriptionScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        if (subscriptions.isEmpty()) {
+        if (products.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -114,7 +114,7 @@ fun SubscriptionScreen(modifier: Modifier = Modifier) {
             }
         } else {
             SubscriptionList(
-                subscriptions = subscriptions,
+                products = products,
                 statusMessage = statusMessage,
                 onSubscribe = { subscription ->
                     // Simplified subscribe - only needs productId!
@@ -145,7 +145,7 @@ fun SubscriptionScreen(modifier: Modifier = Modifier) {
 
 @Composable
 fun SubscriptionList(
-    subscriptions: List<SubscriptionDetails>,
+    products: List<SubscriptionDetails>,
     statusMessage: String?,
     onSubscribe: (SubscriptionDetails) -> Unit
 ) {
@@ -174,7 +174,7 @@ fun SubscriptionList(
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(subscriptions) { subscription ->
+            items(products) { subscription ->
                 SubscriptionCard(
                     subscription = subscription,
                     onSubscribe = { onSubscribe(subscription) }

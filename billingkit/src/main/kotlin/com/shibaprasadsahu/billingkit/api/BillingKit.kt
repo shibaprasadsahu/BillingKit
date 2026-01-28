@@ -43,13 +43,27 @@ class BillingKit private constructor(
      *
      * Example:
      * ```
-     * BillingKit.getInstance().subscriptionsFlow.collect { subscriptions ->
+     * BillingKit.getInstance().productsFlow.collect { products ->
      *     // Update UI
      * }
      * ```
      */
-    val subscriptionsFlow: StateFlow<List<SubscriptionDetails>>
-        get() = subscriptionManager.subscriptionsFlow
+    val productsFlow: StateFlow<List<SubscriptionDetails>>
+        get() = subscriptionManager.productsFlow
+
+    /**
+     * Flow of only currently active subscriptions
+     * Updates automatically when subscription status changes
+     *
+     * Example:
+     * ```
+     * BillingKit.getInstance().activeSubscriptionsFlow.collect { activeSubs ->
+     *     // Update UI
+     * }
+     * ```
+     */
+    val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>>
+        get() = subscriptionManager.activeSubscriptionsFlow
 
     // ===================================
     // Listener-based API (Callbacks)

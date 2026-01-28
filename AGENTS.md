@@ -21,7 +21,8 @@ BillingKit is a modern Android billing library built on top of Google Play Billi
 │  Internal Implementation         │
 │  SubscriptionManagerImpl         │
 │  - Auto-fetch on connection      │
-│  - StateFlow subscriptions       │
+│  - productsFlow &                │
+│    activeSubscriptionsFlow       │
 │  - Auto-acknowledge purchases    │
 │  - Lifecycle-aware fetching      │
 └────────────┬─────────────────────┘
@@ -126,17 +127,16 @@ All implementation details are marked `internal`.
 ### 2. Dual API Approach
 Provides both reactive and callback-based APIs:
 
-**Reactive (StateFlow)**:
+**Reactive (Flow)**:
 ```kotlin
-billingKit.subscriptionsFlow.collect { subscriptions ->
-    updateUI(subscriptions)
+// Observe all products
+billingKit.productsFlow.collect { products ->
+    updateUI(products)
 }
-```
 
-**Callback**:
-```kotlin
-billingKit.setSubscriptionUpdateListener { subscriptions ->
-    updateUI(subscriptions)
+// Observe active subscriptions only
+billingKit.activeSubscriptionsFlow.collect { activeSubs ->
+    updateActiveUI(activeSubs)
 }
 ```
 
@@ -375,23 +375,31 @@ class MainActivity : ComponentActivity() {
 }
 ```
 
-### Observe Subscriptions (Flow)
+### Observe Products & Subscriptions (Flow)
 ```kotlin
 lifecycleScope.launch {
-    billingKit.subscriptionsFlow.collect { subscriptions ->
-        subscriptions.forEach { subscription ->
-            Log.d("Billing", "Product: ${subscription.productId}")
-            Log.d("Billing", "Price: ${subscription.formattedPrice}")
-            Log.d("Billing", "Active: ${subscription.isActive}")
+    // All products
+    billingKit.productsFlow.collect { products ->
+        products.forEach { product ->
+            Log.d("Billing", "Product: ${product.productId}")
+        }
+    }
+}
+
+lifecycleScope.launch {
+    // Active only
+    billingKit.activeSubscriptionsFlow.collect { activeSubs ->
+        activeSubs.forEach { sub ->
+            Log.d("Billing", "Active: ${sub.productId}")
         }
     }
 }
 ```
 
-### Observe Subscriptions (Callback)
+### Observe Purchases (Callback)
 ```kotlin
-billingKit.setSubscriptionUpdateListener { subscriptions ->
-    updateUI(subscriptions)
+billingKit.setPurchaseUpdateListener(lifecycleOwner) { owner, purchases ->
+    handlePurchases(purchases)
 }
 ```
 

@@ -8,10 +8,8 @@ Modern Android billing library for Google Play subscriptions with automatic conn
 
 ## ✨ Features
 
+- ✅ **Two-Stream Flow** - Separate flows for available products and active subscriptions
 - ✅ **Automatic Connection** - Billing connects and fetches products automatically
-- ✅ **Auto-Acknowledge** - Purchases are automatically acknowledged
-- ✅ **Security Verification** - Optional RSA signature verification for purchases
-- ✅ **Flow & Callbacks** - Choose between reactive Flow or simple callbacks
 - ✅ **Simplified API** - Just pass product ID to subscribe
 - ✅ **Lifecycle Aware** - Handles lifecycle events automatically
 - ✅ **Thread Safe** - Built with coroutines and mutex protection
@@ -66,7 +64,7 @@ To enable purchase signature verification:
 
 > If not provided, signature verification is **skipped** (less secure but optional)
 
-### 2. Observe Subscriptions
+### 2. Observe Products & Subscriptions
 
 ```kotlin
 class MainActivity : ComponentActivity() {
@@ -75,10 +73,19 @@ class MainActivity : ComponentActivity() {
 
         val billingKit = BillingKit.getInstance()
 
-        // Observe with Flow
+        // Observe all available products (prices, details, etc.)
         lifecycleScope.launch {
-            billingKit.subscriptionsFlow.collect { subscriptions ->
-                updateUI(subscriptions)
+            billingKit.productsFlow.collect { products ->
+                updateProductUI(products)
+            }
+        }
+
+        // Observe only active subscriptions
+        lifecycleScope.launch {
+            billingKit.activeSubscriptionsFlow.collect { activeSubs ->
+                if (activeSubs.isNotEmpty()) {
+                    enablePremiumFeatures()
+                }
             }
         }
     }
@@ -104,16 +111,17 @@ billingKit.subscribe(this, "premium_monthly") { result ->
 @Composable
 fun SubscriptionScreen() {
     val billingKit = remember { BillingKit.getInstance() }
-    val subscriptions by billingKit.subscriptionsFlow.collectAsState()
+    val products by billingKit.productsFlow.collectAsState()
+    val activeSubscriptions by billingKit.activeSubscriptionsFlow.collectAsState()
 
     LazyColumn {
-        items(subscriptions) { subscription ->
+        items(products) { product ->
             SubscriptionCard(
-                title = subscription.productTitle,
-                price = subscription.formattedPrice,
-                isActive = subscription.isActive,
+                title = product.productTitle,
+                price = product.formattedPrice,
+                isActive = product.isActive,
                 onSubscribe = {
-                    billingKit.subscribe(context as Activity, subscription.productId) { }
+                    billingKit.subscribe(context as Activity, product.productId) { }
                 }
             )
         }
@@ -124,19 +132,15 @@ fun SubscriptionScreen() {
 ## 🎯 Alternative: Callback API
 
 ```kotlin
-// Set listener
-billingKit.setSubscriptionUpdateListener { subscriptions ->
-    updateUI(subscriptions)
-}
-
-billingKit.setPurchaseUpdateListener { purchases ->
+```kotlin
+// Set listener to observe purchase updates (lifecycle-aware)
+billingKit.setPurchaseUpdateListener(this) { owner, purchases ->
     handlePurchases(purchases)
 }
 
-// Clean up
+// Clean up (though auto-cleanup is handled by lifecycle)
 override fun onDestroy() {
     super.onDestroy()
-    billingKit.removeSubscriptionUpdateListener()
     billingKit.removePurchaseUpdateListener()
 }
 ```
@@ -191,8 +195,8 @@ billingKit.hasAnyActiveSubscription { hasAny ->
     if (hasAny) showPremiumUI()
 }
 
-val active = billingKit.getActiveSubscription()
-val cached = billingKit.getCachedProducts()
+val activeList = billingKit.getActiveSubscription() // Deprecated: Use activeSubscriptionsFlow
+val products = billingKit.getCachedProducts()
 ```
 
 ### Manual Refresh (Optional)
@@ -210,7 +214,7 @@ billingKit.fetchProducts(forceRefresh = true)
 ### Auto-Everything
 - Products fetched automatically on initialize
 - Purchases acknowledged automatically
-- UI updates automatically via Flow
+- UI updates automatically via `productsFlow` and `activeSubscriptionsFlow`
 - Multi-screen updates work automatically
 
 ### Simple & Powerful

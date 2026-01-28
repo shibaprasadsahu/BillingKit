@@ -15,7 +15,7 @@ coroutines = "1.10.2"
 datastore = "1.2.0"
 leakCanary="3.0-alpha-8"
 mockitoCore = "5.21.0"
-mockitoKotlin = "6.2.2"
+mockitoKotlin = "6.2.3"
 robolectric = "4.16.1"
 turbine = "1.2.1"
 

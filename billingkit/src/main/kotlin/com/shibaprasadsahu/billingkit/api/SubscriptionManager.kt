@@ -15,7 +15,13 @@ interface SubscriptionManager {
      * Flow of all subscription products (both active and inactive)
      * Updates automatically when products are fetched or subscription status changes
      */
-    val subscriptionsFlow: StateFlow<List<SubscriptionDetails>>
+    val productsFlow: StateFlow<List<SubscriptionDetails>>
+
+    /**
+     * Flow of only currently active subscriptions
+     * Updates automatically when subscription status changes
+     */
+    val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>>
 
     /**
      * Set a listener to observe purchase updates with lifecycle awareness

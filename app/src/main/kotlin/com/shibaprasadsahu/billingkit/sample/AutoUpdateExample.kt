@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
  * update in ALL places observing the Flow
  *
  * Scenario:
- * 1. MainActivity observes subscriptionsFlow
+ * 1. MainActivity observes productsFlow
  * 2. User navigates to SettingsActivity
  * 3. User subscribes in SettingsActivity
  * 4. MainActivity automatically updates (even though it's in background)
@@ -29,15 +29,15 @@ class MainActivityExample : ComponentActivity() {
 
         val billingKit = BillingKit.getInstance()
 
-        // Observe subscriptions - auto-updates when ANYTHING changes
+        // Observe products - auto-updates when ANYTHING changes
         lifecycleScope.launch {
-            billingKit.subscriptionsFlow.collect { subscriptions ->
+            billingKit.productsFlow.collect { products ->
                 // This gets called:
                 // 1. When fetch completes
                 // 2. When purchase happens (even in another Activity!)
                 // 3. When subscription status changes
-                println("MainActivity: Subscriptions updated - ${subscriptions.size} items")
-                updateUI(subscriptions)
+                println("MainActivity: Products updated - ${products.size} items")
+                updateUI(products)
             }
         }
 
@@ -58,7 +58,7 @@ class MainActivityExample : ComponentActivity() {
         // billingKit.fetchProducts(this)
     }
 
-    private fun updateUI(subscriptions: List<com.shibaprasadsahu.billingkit.model.SubscriptionDetails>) {
+    private fun updateUI(products: List<com.shibaprasadsahu.billingkit.model.SubscriptionDetails>) {
         // Your UI update logic
     }
 }
@@ -73,10 +73,9 @@ class SettingsActivityExample : ComponentActivity() {
 
         val billingKit = BillingKit.getInstance()
 
-        // Also observe here (optional, but shows real-time updates)
+        // Also observe active subscriptions (auto-filtered)
         lifecycleScope.launch {
-            billingKit.subscriptionsFlow.collect { subscriptions ->
-                val activeSubscriptions = subscriptions.filter { it.isActive }
+            billingKit.activeSubscriptionsFlow.collect { activeSubscriptions ->
                 println("SettingsActivity: Active subscriptions - ${activeSubscriptions.size}")
                 updateSettingsUI(activeSubscriptions)
             }
@@ -104,7 +103,7 @@ class SettingsActivityExample : ComponentActivity() {
         }
     }
 
-    private fun updateSettingsUI(subscriptions: List<com.shibaprasadsahu.billingkit.model.SubscriptionDetails>) {
+    private fun updateSettingsUI(activeSubscriptions: List<com.shibaprasadsahu.billingkit.model.SubscriptionDetails>) {
         // Your settings UI update
     }
 }
@@ -116,8 +115,9 @@ class SubscriptionViewModel {
 
     private val billingKit = BillingKit.getInstance()
 
-    // Expose Flow from BillingKit
-    val subscriptions = billingKit.subscriptionsFlow
+    // Expose flows from BillingKit
+    val products = billingKit.productsFlow
+    val activeSubscriptions = billingKit.activeSubscriptionsFlow
 
     // Fetch products
     fun fetchProducts(lifecycleOwner: androidx.lifecycle.LifecycleOwner) {
@@ -142,11 +142,11 @@ class MainActivityWithViewModel : ComponentActivity() {
 
         viewModel = SubscriptionViewModel()
 
-        // Observe from ViewModel
+        // Observe products from ViewModel
         lifecycleScope.launch {
-            viewModel.subscriptions.collect { subscriptions ->
+            viewModel.products.collect { products ->
                 // Auto-updates when ANY activity makes a purchase
-                println("MainActivity (ViewModel): ${subscriptions.size} subscriptions")
+                println("MainActivity (ViewModel): ${products.size} products")
             }
         }
 
@@ -164,10 +164,9 @@ class SettingsActivityWithViewModel : ComponentActivity() {
 
         viewModel = SubscriptionViewModel()
 
-        // Observe subscriptions and filter for active ones
+        // Observe active subscriptions from ViewModel
         lifecycleScope.launch {
-            viewModel.subscriptions.collect { subscriptions ->
-                val activeSubscriptions = subscriptions.filter { it.isActive }
+            viewModel.activeSubscriptions.collect { activeSubscriptions ->
                 // Auto-updates when status changes
                 println("SettingsActivity (ViewModel): ${activeSubscriptions.size} active")
             }
@@ -190,11 +189,11 @@ class RealWorldExample {
      * SCENARIO:
      *
      * 1. User opens MainActivity
-     *    - Observes subscriptionsFlow
+     *    - Observes productsFlow
      *    - Shows "No subscription"
      *
      * 2. User navigates to PaywallActivity
-     *    - Also observes subscriptionsFlow
+     *    - Also observes productsFlow
      *    - User clicks "Subscribe"
      *
      * 3. User completes purchase in PaywallActivity
@@ -230,8 +229,7 @@ class RealWorldExample {
             val billingKit = BillingKit.getInstance()
 
             lifecycleScope.launch {
-                billingKit.subscriptionsFlow.collect { subscriptions ->
-                    val active = subscriptions.filter { it.isActive }
+                billingKit.activeSubscriptionsFlow.collect { active ->
                     // This updates AUTOMATICALLY when user subscribes
                     // in PaywallActivity!
                     if (active.isEmpty()) {
@@ -262,9 +260,9 @@ class RealWorldExample {
             val billingKit = BillingKit.getInstance()
 
             lifecycleScope.launch {
-                billingKit.subscriptionsFlow.collect { subscriptions ->
+                billingKit.productsFlow.collect { products ->
                     // Show subscription options
-                    displaySubscriptionOptions(subscriptions)
+                    displaySubscriptionOptions(products)
                 }
             }
 
@@ -303,12 +301,15 @@ class RealWorldExample {
 /**
  * KEY POINTS:
  *
- * 1. OBSERVE SUBSCRIPTIONS (Flow-based):
- *    - lifecycleScope.launch { billingKit.subscriptionsFlow.collect { subscriptions -> } }
- *    - Filter for active subscriptions: subscriptions.filter { it.isActive }
- *    - Auto-updates when subscriptions change
+ * 1. OBSERVE PRODUCTS (Flow-based):
+ *    - lifecycleScope.launch { billingKit.productsFlow.collect { products -> } }
+ *    - Auto-updates when products details vary
  *
- * 2. OBSERVE PURCHASES (Listener-based):
+ * 2. OBSERVE ACTIVE SUBSCRIPTIONS (Flow-based):
+ *    - lifecycleScope.launch { billingKit.activeSubscriptionsFlow.collect { activeSubs -> } }
+ *    - Only contains currently active subscriptions
+ *
+ * 3. OBSERVE PURCHASES (Listener-based):
  *    - billingKit.setPurchaseUpdateListener(lifecycleOwner) { owner, purchases -> }
  *    - Receives LifecycleOwner and List<Purchase>
  *    - Always called, even with empty list (no active purchases)

@@ -196,7 +196,12 @@ internal class BillingClientWrapper(
 
                             if (originalJson.isEmpty() || signature.isEmpty()) {
                                 BillingLogger.error("Purchase data missing originalJson or signature")
-                                trySend(PurchaseResult.Error("Purchase data incomplete", billingResult.responseCode))
+                                trySend(
+                                    PurchaseResult.Error(
+                                        "Purchase data incomplete",
+                                        billingResult.responseCode
+                                    )
+                                )
                                 close()
                                 return@launch
                             }
@@ -209,7 +214,12 @@ internal class BillingClientWrapper(
 
                             if (!isValid) {
                                 BillingLogger.error("Purchase signature verification failed! Purchase rejected.")
-                                trySend(PurchaseResult.Error("Purchase verification failed - signature invalid", billingResult.responseCode))
+                                trySend(
+                                    PurchaseResult.Error(
+                                        "Purchase verification failed - signature invalid",
+                                        billingResult.responseCode
+                                    )
+                                )
                                 close()
                                 return@launch
                             }
@@ -228,18 +238,26 @@ internal class BillingClientWrapper(
                                 )
                             }
                         } else {
-                            trySend(PurchaseResult.Error("Purchase completed but no data received", billingResult.responseCode))
+                            trySend(
+                                PurchaseResult.Error(
+                                    "Purchase completed but no data received",
+                                    billingResult.responseCode
+                                )
+                            )
                         }
                         close()
                     }
+
                     BillingClient.BillingResponseCode.USER_CANCELED -> {
                         trySend(PurchaseResult.Cancelled)
                         close()
                     }
+
                     BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                         trySend(PurchaseResult.AlreadyOwned)
                         close()
                     }
+
                     else -> {
                         trySend(
                             PurchaseResult.Error(
