@@ -32,7 +32,7 @@ Add the dependency:
 
 ```gradle
 dependencies {
-    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha04")
+    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha07")
 }
 ```
 
@@ -287,7 +287,7 @@ ProGuard rules are included automatically. No additional configuration needed!
 ## 📄 License
 
 ```
-MIT License - Copyright (c) 2025 Shiba Prasad Sahu
+MIT License - Copyright (c) 2026 Shiba Prasad Sahu
 ```
 
 ## 👨‍💻 Author
