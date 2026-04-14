@@ -92,6 +92,7 @@ billingKit.activeSubscriptionsFlow.collect { subs -> }    // Active only
 ```
 
 ### Subscribe
+
 ```kotlin
 billingKit.subscribe(activity, "premium_monthly") { result -> }
 billingKit.subscribe(activity, "premium_monthly", useFreeTrial = true) { result -> }
@@ -99,6 +100,7 @@ billingKit.subscribe(activity, "premium_monthly", basePlanId, offerId) { result 
 ```
 
 ### Other APIs
+
 ```kotlin
 billingKit.restorePurchases { result -> }
 billingKit.hasActiveSubscription("premium_monthly") { isActive -> }
@@ -167,6 +169,7 @@ Stack: JUnit 4, Mockito, Mockito-Kotlin, Coroutines Test, Turbine, Robolectric 4
 - Runs tests → builds AAR → creates GitHub Release → notifies JitPack
 
 **JitPack** (`jitpack.yml`):
+
 ```yaml
 jdk:
   - openjdk17

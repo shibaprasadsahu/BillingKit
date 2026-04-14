@@ -7,14 +7,18 @@ plugins {
 
 android {
     namespace = "com.shibaprasadsahu.billingkit.sample"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     defaultConfig {
         applicationId = "com.shibaprasadsahu.billingkit.sample"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1-alpha07"
+        versionName = "0.1-alpha08"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -47,7 +51,7 @@ android {
 dependencies {
 
     implementation(project(":billingkit"))
-//    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha07")
+//    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha08")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

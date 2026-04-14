@@ -17,11 +17,13 @@ import com.shibaprasadsahu.billingkit.model.PurchaseResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
 import kotlin.coroutines.resume
 
 /**
@@ -32,6 +34,7 @@ internal class BillingClientWrapper(
     private val base64PublicKey: String? = null
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val billingFlowMutex = Mutex()
 
     // Initialize billing client immediately (not lazy) to start connection automatically
     private val billingClient: BillingClient = BillingClient.newBuilder(context)
@@ -47,6 +50,7 @@ internal class BillingClientWrapper(
         .build()
         .also { client -> startConnection(client) }
 
+    @Volatile
     private var purchaseUpdateCallback: ((BillingResult, List<Purchase>?) -> Unit)? = null
     private var onConnectionEstablishedCallback: (() -> Unit)? = null
 
@@ -90,6 +94,7 @@ internal class BillingClientWrapper(
 
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(billingResult: BillingResult) {
+                if (!continuation.isActive) return
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                     continuation.resume(true)
                 } else {
@@ -99,6 +104,7 @@ internal class BillingClientWrapper(
             }
 
             override fun onBillingServiceDisconnected() {
+                if (!continuation.isActive) return
                 continuation.resume(false)
             }
         })
@@ -128,6 +134,7 @@ internal class BillingClientWrapper(
 
         return suspendCancellableCoroutine { continuation ->
             billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsResult ->
+                if (!continuation.isActive) return@queryProductDetailsAsync
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                     val productDetailsList = productDetailsResult.productDetailsList
                     val unfetchedProducts = productDetailsResult.unfetchedProductList
@@ -178,7 +185,14 @@ internal class BillingClientWrapper(
         productDetails: ProductDetails,
         offerToken: String
     ): Flow<PurchaseResult> = callbackFlow {
+        if (!billingFlowMutex.tryLock()) {
+            trySend(PurchaseResult.Error("A purchase is already in progress", -1))
+            close()
+            return@callbackFlow
+        }
+
         if (!ensureReady()) {
+            billingFlowMutex.unlock()  // must unlock explicitly — return exits before awaitClose
             trySend(PurchaseResult.Error("Billing client not ready", -1))
             close()
             return@callbackFlow
@@ -286,11 +300,12 @@ internal class BillingClientWrapper(
 
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             trySend(PurchaseResult.Error(result.debugMessage, result.responseCode))
-            close()
+            close()  // awaitClose will unlock the mutex
         }
 
         awaitClose {
             purchaseUpdateCallback = null
+            billingFlowMutex.unlock()
         }
     }
 
@@ -306,6 +321,7 @@ internal class BillingClientWrapper(
 
         return suspendCancellableCoroutine { continuation ->
             billingClient.acknowledgePurchase(params) { billingResult ->
+                if (!continuation.isActive) return@acknowledgePurchase
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                     BillingLogger.info("Purchase acknowledged successfully")
                     continuation.resume(true)
@@ -322,6 +338,7 @@ internal class BillingClientWrapper(
      */
     fun endConnection() {
         billingClient.endConnection()
+        scope.cancel()
         BillingLogger.info("Billing client connection ended")
     }
 }
