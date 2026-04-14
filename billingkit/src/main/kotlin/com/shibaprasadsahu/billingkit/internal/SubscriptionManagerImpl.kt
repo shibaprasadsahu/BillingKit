@@ -54,6 +54,7 @@ internal class SubscriptionManagerImpl(
     // Listeners
     private var purchaseUpdateListener: PurchaseUpdateListener? = null
     private var purchaseListenerLifecycleOwner: LifecycleOwner? = null
+    private var purchaseListenerObserver: LifecycleEventObserver? = null
 
     // StateFlows for reactive programming
     private val _productsFlow = MutableStateFlow<List<SubscriptionDetails>>(emptyList())
@@ -64,11 +65,13 @@ internal class SubscriptionManagerImpl(
     override val activeSubscriptionsFlow: StateFlow<List<SubscriptionDetails>> =
         _activeSubscriptionsFlow.asStateFlow()
 
-    // Caching and state management - lazy initialization for better performance
-    private val cachedSubscriptions by lazy { mutableListOf<SubscriptionDetails>() }
+    // Caching and state management
+    @Volatile
+    private var cachedSubscriptions: List<SubscriptionDetails> = emptyList()
     private val activePurchases by lazy { mutableMapOf<String, Purchase>() }
 
     // Fetch management
+    @Volatile
     private var lastFetchTimestamp: Long = 0
     private val fetchMutex by lazy { Mutex() }
     private val isFetching by lazy { AtomicBoolean(false) }
@@ -81,6 +84,13 @@ internal class SubscriptionManagerImpl(
     private val purchasesMutex by lazy { Mutex() } // Protects updateActivePurchases
 
     override fun setPurchaseUpdateListener(lifecycleOwner: LifecycleOwner, listener: PurchaseUpdateListener) {
+        // Remove previous observer before attaching a new one
+        val prevOwner = purchaseListenerLifecycleOwner
+        val prevObserver = purchaseListenerObserver
+        if (prevOwner != null && prevObserver != null) {
+            scope.launch(Dispatchers.Main) { prevOwner.lifecycle.removeObserver(prevObserver) }
+        }
+
         purchaseUpdateListener = listener
         purchaseListenerLifecycleOwner = lifecycleOwner
 
@@ -99,6 +109,7 @@ internal class SubscriptionManagerImpl(
                 else -> {}
             }
         }
+        purchaseListenerObserver = observer
 
         // Add observer on main thread (required by lifecycle)
         scope.launch(Dispatchers.Main) {
@@ -152,6 +163,12 @@ internal class SubscriptionManagerImpl(
     }
 
     override fun removePurchaseUpdateListener() {
+        val owner = purchaseListenerLifecycleOwner
+        val observer = purchaseListenerObserver
+        if (owner != null && observer != null) {
+            scope.launch(Dispatchers.Main) { owner.lifecycle.removeObserver(observer) }
+        }
+        purchaseListenerObserver = null
         purchaseUpdateListener = null
         purchaseListenerLifecycleOwner = null
     }
@@ -268,8 +285,7 @@ internal class SubscriptionManagerImpl(
                             }
 
                             // Update cache
-                            cachedSubscriptions.clear()
-                            cachedSubscriptions.addAll(subscriptionDetailsList)
+                            cachedSubscriptions = subscriptionDetailsList
 
                             // Update timestamp
                             lastFetchTimestamp = System.currentTimeMillis()
@@ -457,8 +473,7 @@ internal class SubscriptionManagerImpl(
                 val updatedSubscriptions = cachedSubscriptions.map { details ->
                     details.copy(isActive = activePurchases.containsKey(details.productId))
                 }
-                cachedSubscriptions.clear()
-                cachedSubscriptions.addAll(updatedSubscriptions)
+                cachedSubscriptions = updatedSubscriptions
                 notifySubscriptionUpdate(updatedSubscriptions)
             }
         }
@@ -496,7 +511,7 @@ internal class SubscriptionManagerImpl(
     }
 
     override fun getCachedProducts(): List<SubscriptionDetails> {
-        return cachedSubscriptions.toList()
+        return cachedSubscriptions
     }
 
     override fun subscribe(
@@ -563,66 +578,64 @@ internal class SubscriptionManagerImpl(
         }
     }
 
-    private fun subscribeWithDetails(
+    private suspend fun subscribeWithDetails(
         activity: Activity,
         productId: String,
         basePlanId: String,
         offerId: String?,
         callback: (PurchaseResult) -> Unit
     ) {
-        scope.launch {
-            try {
-                BillingLogger.debug("Starting subscription flow for $productId with basePlan: $basePlanId, offer: $offerId")
+        try {
+            BillingLogger.debug("Starting subscription flow for $productId with basePlan: $basePlanId, offer: $offerId")
 
-                // Query product details
-                val productDetailsList =
-                    billingClient.querySubscriptionDetailsById(listOf(productId))
-                val productDetails = productDetailsList.firstOrNull { it.productId == productId }
+            // Query product details
+            val productDetailsList =
+                billingClient.querySubscriptionDetailsById(listOf(productId))
+            val productDetails = productDetailsList.firstOrNull { it.productId == productId }
 
-                if (productDetails == null) {
-                    BillingLogger.error("Product not found: $productId")
-                    withContext(Dispatchers.Main) {
-                        callback(PurchaseResult.Error("Product not found", -1))
-                    }
-                    return@launch
-                }
-
-                val subscriptionOfferDetails = productDetails.subscriptionOfferDetails
-                    ?.firstOrNull { offer ->
-                        offer.basePlanId == basePlanId &&
-                                (offerId == null || offer.offerId == offerId)
-                    }
-
-                if (subscriptionOfferDetails == null) {
-                    BillingLogger.error("Offer not found for basePlan: $basePlanId, offer: $offerId")
-                    withContext(Dispatchers.Main) {
-                        callback(PurchaseResult.Error("Offer not found", -1))
-                    }
-                    return@launch
-                }
-
-                // Launch billing flow
-                billingClient.launchBillingFlow(
-                    activity,
-                    productDetails,
-                    subscriptionOfferDetails.offerToken
-                ).collect { purchaseResult ->
-                    // Update active purchases on success
-                    if (purchaseResult is PurchaseResult.Success) {
-                        // Refresh everything (purchases + products) in one efficient call
-                        // fetchProducts already queries purchases, so no need to do it twice
-                        fetchProducts(forceRefresh = true)
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        callback(purchaseResult)
-                    }
-                }
-            } catch (e: Exception) {
-                BillingLogger.error("Error during subscription: ${e.message}", e)
+            if (productDetails == null) {
+                BillingLogger.error("Product not found: $productId")
                 withContext(Dispatchers.Main) {
-                    callback(PurchaseResult.Error(e.message ?: "Unknown error", -1))
+                    callback(PurchaseResult.Error("Product not found", -1))
                 }
+                return
+            }
+
+            val subscriptionOfferDetails = productDetails.subscriptionOfferDetails
+                ?.firstOrNull { offer ->
+                    offer.basePlanId == basePlanId &&
+                            (offerId == null || offer.offerId == offerId)
+                }
+
+            if (subscriptionOfferDetails == null) {
+                BillingLogger.error("Offer not found for basePlan: $basePlanId, offer: $offerId")
+                withContext(Dispatchers.Main) {
+                    callback(PurchaseResult.Error("Offer not found", -1))
+                }
+                return
+            }
+
+            // Launch billing flow
+            billingClient.launchBillingFlow(
+                activity,
+                productDetails,
+                subscriptionOfferDetails.offerToken
+            ).collect { purchaseResult ->
+                // Update active purchases on success
+                if (purchaseResult is PurchaseResult.Success) {
+                    // Refresh everything (purchases + products) in one efficient call
+                    // fetchProducts already queries purchases, so no need to do it twice
+                    fetchProducts(forceRefresh = true)
+                }
+
+                withContext(Dispatchers.Main) {
+                    callback(purchaseResult)
+                }
+            }
+        } catch (e: Exception) {
+            BillingLogger.error("Error during subscription: ${e.message}", e)
+            withContext(Dispatchers.Main) {
+                callback(PurchaseResult.Error(e.message ?: "Unknown error", -1))
             }
         }
     }
@@ -634,7 +647,9 @@ internal class SubscriptionManagerImpl(
         offerId: String?,
         callback: (PurchaseResult) -> Unit
     ) {
-        subscribeWithDetails(activity, productId, basePlanId, offerId, callback)
+        scope.launch {
+            subscribeWithDetails(activity, productId, basePlanId, offerId, callback)
+        }
     }
 
     override fun subscribe(

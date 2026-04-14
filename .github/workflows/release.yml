@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5.2.0
@@ -39,41 +41,47 @@ jobs:
 
       - name: Generate release notes
         id: release_notes
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          cat > release_notes.md << 'EOF'
-          ## BillingKit ${{ steps.version.outputs.VERSION }}
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGES="- Initial release"
+          fi
 
-          ### 🚀 Installation
+          cat > release_notes.md << EOF
+          ## BillingKit ${VERSION}
 
-          Add to your `build.gradle.kts`:
-          ```kotlin
+          ### What's Changed
+
+          ${CHANGES}
+
+          ---
+
+          ### Installation
+
+          Add to your \`build.gradle.kts\`:
+          \`\`\`kotlin
           dependencies {
-              implementation("com.github.shibaprasadsahu:billingkit:${{ steps.version.outputs.VERSION }}")
+              implementation("com.github.shibaprasadsahu:billingkit:${VERSION}")
           }
-          ```
+          \`\`\`
 
-          Add JitPack repository in `settings.gradle.kts`:
-          ```kotlin
+          Add JitPack repository in \`settings.gradle.kts\`:
+          \`\`\`kotlin
           maven { url = uri("https://jitpack.io") }
-          ```
+          \`\`\`
 
-          ### 📚 Quick Start
+          ### Quick Start
 
-          ```kotlin
-          // Initialize
+          \`\`\`kotlin
           BillingKit.initialize(
               context = this,
               subscriptionIds = listOf("premium_monthly", "premium_yearly")
           )
 
-          // Observe subscriptions
-          lifecycleScope.launch {
-              BillingKit.getInstance().subscriptionsFlow.collect { subscriptions ->
-                  updateUI(subscriptions)
-              }
-          }
-
-          // Subscribe
           billingKit.subscribe(this, "premium_monthly") { result ->
               when (result) {
                   is PurchaseResult.Success -> handleSuccess()
@@ -82,25 +90,13 @@ jobs:
                   is PurchaseResult.AlreadyOwned -> handleAlreadyOwned()
               }
           }
-          ```
+          \`\`\`
 
-          ### 📖 Documentation
-
-          - [README](https://github.com/shibaprasadsahu/billingkit#readme)
-          - [Architecture Guide](https://github.com/shibaprasadsahu/billingkit/blob/main/AGENTS.md)
-          - [Sample App](https://github.com/shibaprasadsahu/billingkit/tree/main/sample)
-
-          ### 🔗 Links
-
-          - [JitPack Build Status](https://jitpack.io/#shibaprasadsahu/billingkit/${{ steps.version.outputs.VERSION }})
-
-          ---
-
-          **Note**: This is an alpha release. The API may change in future releases.
+          **Full docs:** [README](https://github.com/shibaprasadsahu/billingkit#readme) | [JitPack](https://jitpack.io/#shibaprasadsahu/billingkit/${VERSION})
           EOF
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@v3.0.0
         with:
           files: |
             billingkit/build/outputs/aar/billingkit-release.aar
@@ -111,5 +107,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify JitPack
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          curl -X POST "https://jitpack.io/api/builds/com.github.shibaprasadsahu/billingkit/${{ steps.version.outputs.VERSION }}"
+          curl -X POST "https://jitpack.io/api/builds/com.github.shibaprasadsahu/billingkit/${VERSION}"

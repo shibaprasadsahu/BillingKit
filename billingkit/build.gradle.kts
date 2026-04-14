@@ -8,8 +8,8 @@ plugins {
 android {
     namespace = "com.shibaprasadsahu.billingkit"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
+        version = release(37) {
+            minorApiLevel = 0
         }
     }
 
@@ -71,7 +71,7 @@ afterEvaluate {
 
                 groupId = "com.github.shibaprasadsahu"
                 artifactId = "billingkit"
-                version = "0.1-alpha07"
+                version = project.property("VERSION_NAME") as String
 
                 pom {
                     name.set("BillingKit")

@@ -32,7 +32,7 @@ Add the dependency:
 
 ```gradle
 dependencies {
-    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha07")
+    implementation("com.github.shibaprasadsahu:billingkit:0.1-alpha08")
 }
 ```
 
@@ -132,7 +132,6 @@ fun SubscriptionScreen() {
 ## 🎯 Alternative: Callback API
 
 ```kotlin
-```kotlin
 // Set listener to observe purchase updates (lifecycle-aware)
 billingKit.setPurchaseUpdateListener(this) { owner, purchases ->
     handlePurchases(purchases)
@@ -195,7 +194,7 @@ billingKit.hasAnyActiveSubscription { hasAny ->
     if (hasAny) showPremiumUI()
 }
 
-val activeList = billingKit.getActiveSubscription() // Deprecated: Use activeSubscriptionsFlow
+val activeList = billingKit.getActiveSubscription()
 val products = billingKit.getCachedProducts()
 ```
 
